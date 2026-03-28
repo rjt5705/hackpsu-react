@@ -22,6 +22,8 @@ function App() {
 
   const handleGameEnd = () => setScreen('reveal');
 
+  const handleBackToLobby = () => setScreen('lobby');
+
   const handleLeave = () => {
     setLobbyId(null);
     setPlayerId(null);
@@ -60,7 +62,7 @@ function App() {
       <RevealScreen
         lobbyId={lobbyId}
         playerId={playerId}
-        onPlayAgain={handleLeave}
+        onBackToLobby={handleBackToLobby}
       />
     );
   }

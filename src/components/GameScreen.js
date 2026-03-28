@@ -28,10 +28,16 @@ function GameScreen({ lobbyId, playerId, onGameEnd }) {
   const advancedRef = useRef(false);
   const prevStepRef = useRef(-1);
   const timerRef = useRef(null);
+  const isHostRef = useRef(false);
+  const settingsRef = useRef({ codingTime: 60, guessingTime: 30 });
+  const playerCountRef = useRef(0);
 
   // Keep refs in sync
   useEffect(() => { codeRef.current = code; }, [code]);
   useEffect(() => { guessRef.current = guess; }, [guess]);
+  useEffect(() => { isHostRef.current = isHost; }, [isHost]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => { playerCountRef.current = playerCount; }, [playerCount]);
 
   // Subscribe to settings + host status + player count
   useEffect(() => {
@@ -74,6 +80,19 @@ function GameScreen({ lobbyId, playerId, onGameEnd }) {
 
       if (data.stepType === 'done') {
         onGameEnd();
+        return;
+      }
+
+      // Bug 3: host advances immediately when all players have submitted
+      if (isHostRef.current && !advancedRef.current) {
+        const submissions = data.submissions
+          ? Object.values(data.submissions).filter(Boolean)
+          : [];
+        const total = playerCountRef.current;
+        if (total > 0 && submissions.length >= total) {
+          advancedRef.current = true;
+          advanceStep(lobbyId, data.step, total, settingsRef.current);
+        }
       }
     });
     return unsub;

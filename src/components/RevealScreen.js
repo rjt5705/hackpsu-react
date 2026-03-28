@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { database } from '../firebase';
+import { resetLobby } from '../services/gameService';
 
 const toArray = (val) => {
   if (!val) return [];
@@ -8,7 +9,7 @@ const toArray = (val) => {
   return Object.values(val);
 };
 
-function RevealScreen({ lobbyId, playerId, onPlayAgain }) {
+function RevealScreen({ lobbyId, playerId, onBackToLobby }) {
   const [chains, setChains] = useState([]);
   const [, setPlayerOrder] = useState([]);
   const [playerMap, setPlayerMap] = useState({});
@@ -101,8 +102,8 @@ function RevealScreen({ lobbyId, playerId, onPlayAgain }) {
             Next Chain →
           </button>
         )}
-        <button className="btn btn-green" onClick={onPlayAgain}>
-          Back to Home
+        <button className="btn btn-green" onClick={async () => { await resetLobby(lobbyId); onBackToLobby(); }}>
+          Back to Lobby
         </button>
       </div>
     </div>

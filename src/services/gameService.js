@@ -1,5 +1,5 @@
 import { database } from '../firebase';
-import { ref, set, get, update, onValue } from 'firebase/database';
+import { ref, set, get, update, onValue, remove } from 'firebase/database';
 
 export const DEFAULT_TASKS = [
   'Write a function that checks if a number is even',
@@ -130,4 +130,10 @@ export const updateSettings = async (lobbyId, settings) => {
 export const getSettings = async (lobbyId) => {
   const snap = await get(ref(database, `lobbies/${lobbyId}/settings`));
   return snap.exists() ? snap.val() : { codingTime: 60, guessingTime: 30, taskBank: DEFAULT_TASKS };
+};
+
+// Reset lobby back to waiting state after a game ends (for play-again)
+export const resetLobby = async (lobbyId) => {
+  await remove(ref(database, `lobbies/${lobbyId}/game`));
+  await update(ref(database, `lobbies/${lobbyId}`), { status: 'waiting' });
 };

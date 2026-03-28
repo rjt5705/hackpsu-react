@@ -1,5 +1,5 @@
 import { database } from '../firebase';
-import { ref, set, get, onValue, remove, onDisconnect, update } from 'firebase/database';
+import { ref, set, get, onValue, remove, onDisconnect } from 'firebase/database';
 
 // Helper function to generate a random 6-digit room code
 export const generateLobbyId = () => {
@@ -38,12 +38,9 @@ export const createLobby = async (nickname) => {
   
   // Auto-remove player if they disconnect
   onDisconnect(playerRef).remove();
-  
-  // If lobby becomes empty, remove it
-  const lobbyPlayersRef = ref(database, `lobbies/${lobbyId}/players`);
-  onDisconnect(lobbyRef).update({ 
-    status: 'empty' 
-  });
+
+  // If host disconnects, delete the entire lobby
+  onDisconnect(lobbyRef).remove();
   
   return { lobbyId, playerId };
 };

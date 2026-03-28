@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { subscribeToPlayers, kickPlayer, leaveLobby } from '../services/lobbyService';
 import { updateSettings, startGame, DEFAULT_TASKS } from '../services/gameService';
 import { ref, onValue } from 'firebase/database';
@@ -14,8 +14,18 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   const [showSettings, setShowSettings] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Bug 1: track voluntary leaves so we don't mistake them for kicks
+  const isLeavingRef = useRef(false);
+
   useEffect(() => {
-    const unsubPlayers = subscribeToPlayers(lobbyId, (list) => setPlayers(list || []));
+    const unsubPlayers = subscribeToPlayers(lobbyId, (list) => {
+      setPlayers(list || []);
+      // If current player is no longer in the list and we didn't leave voluntarily → kicked
+      if (!isLeavingRef.current) {
+        const stillPresent = (list || []).some((p) => p.id === playerId);
+        if (!stillPresent) onLeave();
+      }
+    });
 
     const settingsRef = ref(database, `lobbies/${lobbyId}/settings`);
     const unsubSettings = onValue(settingsRef, (snap) => {
@@ -32,6 +42,7 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
     });
 
     return () => { unsubPlayers(); unsubSettings(); unsubLobby(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyId, playerId, onGameStart]);
 
   const handleStart = async () => {
@@ -47,6 +58,7 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   };
 
   const handleLeave = async () => {
+    isLeavingRef.current = true;
     await leaveLobby(lobbyId, playerId);
     onLeave();
   };
