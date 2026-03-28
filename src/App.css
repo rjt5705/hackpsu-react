@@ -310,6 +310,11 @@ body {
   flex: 1;
 }
 
+.not-returned {
+  font-size: 0.75rem;
+  color: #f59e0b;
+}
+
 /* ── Game screen ── */
 
 .game-screen {

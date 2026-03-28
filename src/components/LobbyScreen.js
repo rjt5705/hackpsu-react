@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { subscribeToPlayers, kickPlayer, leaveLobby } from '../services/lobbyService';
 import { updateSettings, startGame, markPlayerReturned, DEFAULT_TASKS } from '../services/gameService';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, remove } from 'firebase/database';
 import { database } from '../firebase';
 
 function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
@@ -13,12 +13,28 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   const [newTask, setNewTask] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [returnedCount, setReturnedCount] = useState(0);
 
-  // Bug 1: track voluntary leaves so we don't mistake them for kicks
+  // Bug 2: track returned player IDs (not just count) so disconnected players don't block start
+  const [returnedIds, setReturnedIds] = useState(new Set());
+
+  // Grace period: after resetAt, unblock Start after 60 s even if some players haven't returned
+  const [graceExpired, setGraceExpired] = useState(false);
+  const graceTimerRef = useRef(null);
+
+  // Bug 1: raw string state for time inputs so the user can freely type and clear the field
+  const [codingTimeRaw, setCodingTimeRaw] = useState('60');
+  const [guessingTimeRaw, setGuessingTimeRaw] = useState('30');
+
+  // Sync raw inputs when settings arrive from Firebase (e.g. another host session)
+  useEffect(() => {
+    setCodingTimeRaw(String(settings.codingTime));
+    setGuessingTimeRaw(String(settings.guessingTime));
+  }, [settings.codingTime, settings.guessingTime]);
+
+  // Track voluntary leaves so we don't mistake them for kicks
   const isLeavingRef = useRef(false);
 
-  // Register this player as having returned to the lobby
+  // Register this player as returned to lobby as soon as they land here
   useEffect(() => {
     markPlayerReturned(lobbyId, playerId);
   }, [lobbyId, playerId]);
@@ -26,7 +42,6 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   useEffect(() => {
     const unsubPlayers = subscribeToPlayers(lobbyId, (list) => {
       setPlayers(list || []);
-      // If current player is no longer in the list and we didn't leave voluntarily → kicked
       if (!isLeavingRef.current) {
         const stillPresent = (list || []).some((p) => p.id === playerId);
         if (!stillPresent) onLeave();
@@ -49,18 +64,50 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
 
     const returnedRef = ref(database, `lobbies/${lobbyId}/returnedPlayers`);
     const unsubReturned = onValue(returnedRef, (snap) => {
-      setReturnedCount(snap.exists() ? Object.keys(snap.val()).length : 0);
+      setReturnedIds(snap.exists() ? new Set(Object.keys(snap.val())) : new Set());
     });
 
-    return () => { unsubPlayers(); unsubSettings(); unsubLobby(); unsubReturned(); };
+    // When resetAt changes (new game ended), start a 60-second grace period.
+    // After it expires the host can start even if some players haven't returned yet
+    // (they likely closed their tab — Firebase just hasn't removed them yet).
+    const resetAtRef = ref(database, `lobbies/${lobbyId}/resetAt`);
+    const unsubResetAt = onValue(resetAtRef, (snap) => {
+      clearTimeout(graceTimerRef.current);
+      setGraceExpired(false);
+      if (!snap.exists()) return;
+      const elapsed = Date.now() - snap.val();
+      const remaining = Math.max(0, 60000 - elapsed);
+      graceTimerRef.current = setTimeout(() => setGraceExpired(true), remaining);
+    });
+
+    return () => {
+      unsubPlayers(); unsubSettings(); unsubLobby(); unsubReturned(); unsubResetAt();
+      clearTimeout(graceTimerRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyId, playerId, onGameStart]);
 
-  const notAllReturned = returnedCount < players.length;
+  // Bug 3: host auto-deletes lobby after 10 minutes of inactivity
+  useEffect(() => {
+    if (!isHost) return;
+    const timer = setTimeout(async () => {
+      isLeavingRef.current = true;
+      await remove(ref(database, `lobbies/${lobbyId}`));
+      onLeave();
+    }, 10 * 60 * 1000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost, lobbyId]);
+
+  // Bug 2: every player currently in Firebase must be in returnedIds — disconnected players
+  // are already removed from `players`, so they don't block the count.
+  // After the 60-second grace period we unblock Start anyway (Firebase disconnect lag).
+  const waitingOn = players.filter((p) => !returnedIds.has(p.id));
+  const notAllReturned = !graceExpired && waitingOn.length > 0;
 
   const handleStart = async () => {
     if (players.length < 2) { setError('Need at least 2 players to start'); return; }
-    if (notAllReturned) { setError(`Waiting for players to return (${returnedCount}/${players.length})`); return; }
+    if (notAllReturned) { setError(`Waiting for ${waitingOn.length} player(s) to return`); return; }
     setIsStarting(true);
     setError('');
     try {
@@ -85,6 +132,19 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
     const updated = { ...settings, [key]: value };
     setSettings(updated);
     await updateSettings(lobbyId, updated);
+  };
+
+  // Bug 1: validate time on blur instead of on every keystroke
+  const handleTimeBlur = (key, rawValue, fallback) => {
+    const val = parseInt(rawValue, 10);
+    if (!val || val <= 0) {
+      setError(`${key === 'codingTime' ? 'Coding' : 'Guessing'} time must be greater than 0`);
+      if (key === 'codingTime') setCodingTimeRaw(String(settings.codingTime));
+      else setGuessingTimeRaw(String(settings.guessingTime));
+      return;
+    }
+    setError('');
+    handleSettingChange(key, val);
   };
 
   const handleAddTask = async () => {
@@ -134,6 +194,9 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
                   <span>
                     {p.nickname}
                     {p.id === playerId && ' (you)'}
+                    {!returnedIds.has(p.id) && p.id !== playerId && (
+                      <span className="not-returned"> · returning...</span>
+                    )}
                   </span>
                   {isHost && p.id !== playerId && (
                     <button className="btn-kick" onClick={() => handleKick(p.id)}>Kick</button>
@@ -159,20 +222,20 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
                     <label>Coding time (s)</label>
                     <input
                       type="number"
-                      min="10"
-                      max="300"
-                      value={settings.codingTime}
-                      onChange={(e) => handleSettingChange('codingTime', parseInt(e.target.value) || 60)}
+                      min="1"
+                      value={codingTimeRaw}
+                      onChange={(e) => setCodingTimeRaw(e.target.value)}
+                      onBlur={() => handleTimeBlur('codingTime', codingTimeRaw)}
                     />
                   </div>
                   <div className="setting-row">
                     <label>Guessing time (s)</label>
                     <input
                       type="number"
-                      min="10"
-                      max="300"
-                      value={settings.guessingTime}
-                      onChange={(e) => handleSettingChange('guessingTime', parseInt(e.target.value) || 30)}
+                      min="1"
+                      value={guessingTimeRaw}
+                      onChange={(e) => setGuessingTimeRaw(e.target.value)}
+                      onBlur={() => handleTimeBlur('guessingTime', guessingTimeRaw)}
                     />
                   </div>
 
@@ -213,7 +276,11 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
               onClick={handleStart}
               disabled={isStarting || players.length < 2 || notAllReturned}
             >
-              {isStarting ? 'Starting...' : notAllReturned ? `Waiting for players (${returnedCount}/${players.length})` : 'Start Game'}
+              {isStarting
+                ? 'Starting...'
+                : notAllReturned
+                  ? `Waiting for ${waitingOn.length} player(s) to return...`
+                  : 'Start Game'}
             </button>
           )}
           {!isHost && (

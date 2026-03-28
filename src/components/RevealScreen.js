@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, remove } from 'firebase/database';
 import { database } from '../firebase';
 import { resetLobby } from '../services/gameService';
 
@@ -9,11 +9,21 @@ const toArray = (val) => {
   return Object.values(val);
 };
 
-function RevealScreen({ lobbyId, playerId, onBackToLobby }) {
+function RevealScreen({ lobbyId, playerId, onBackToLobby, onGoHome }) {
   const [chains, setChains] = useState([]);
   const [, setPlayerOrder] = useState([]);
   const [playerMap, setPlayerMap] = useState({});
   const [viewing, setViewing] = useState(0);
+
+  // Bug 3: auto-delete lobby if nobody goes back within 10 minutes
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      await remove(ref(database, `lobbies/${lobbyId}`));
+      onGoHome();
+    }, 10 * 60 * 1000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lobbyId]);
 
   useEffect(() => {
     const gameRef = ref(database, `lobbies/${lobbyId}/game`);

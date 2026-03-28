@@ -1,9 +1,15 @@
 import { database } from '../firebase';
 import { ref, set, get, onValue, remove, onDisconnect } from 'firebase/database';
 
-// Helper function to generate a random 6-digit room code
+// Helper function to generate a random 6-character room code
+// Uses a fixed character set so the result is always exactly 6 chars
 export const generateLobbyId = () => {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I/L ambiguity
+  let id = '';
+  for (let i = 0; i < 6; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return id;
 };
 
 // Helper function to generate a unique player ID
@@ -58,10 +64,6 @@ export const joinLobby = async (lobbyId, nickname) => {
   
   if (lobbyData.status === 'playing') {
     throw new Error('Game already in progress');
-  }
-  
-  if (lobbyData.status === 'empty') {
-    throw new Error('Room no longer exists');
   }
   
   const playerCount = lobbyData.players ? Object.keys(lobbyData.players).length : 0;

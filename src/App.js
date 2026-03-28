@@ -63,6 +63,7 @@ function App() {
         lobbyId={lobbyId}
         playerId={playerId}
         onBackToLobby={handleBackToLobby}
+        onGoHome={handleLeave}
       />
     );
   }
