@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { subscribeToPlayers, kickPlayer, leaveLobby } from '../services/lobbyService';
-import { updateSettings, startGame, DEFAULT_TASKS } from '../services/gameService';
+import { updateSettings, startGame, markPlayerReturned, DEFAULT_TASKS } from '../services/gameService';
 import { ref, onValue } from 'firebase/database';
 import { database } from '../firebase';
 
@@ -13,9 +13,15 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   const [newTask, setNewTask] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [returnedCount, setReturnedCount] = useState(0);
 
   // Bug 1: track voluntary leaves so we don't mistake them for kicks
   const isLeavingRef = useRef(false);
+
+  // Register this player as having returned to the lobby
+  useEffect(() => {
+    markPlayerReturned(lobbyId, playerId);
+  }, [lobbyId, playerId]);
 
   useEffect(() => {
     const unsubPlayers = subscribeToPlayers(lobbyId, (list) => {
@@ -41,12 +47,20 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
       }
     });
 
-    return () => { unsubPlayers(); unsubSettings(); unsubLobby(); };
+    const returnedRef = ref(database, `lobbies/${lobbyId}/returnedPlayers`);
+    const unsubReturned = onValue(returnedRef, (snap) => {
+      setReturnedCount(snap.exists() ? Object.keys(snap.val()).length : 0);
+    });
+
+    return () => { unsubPlayers(); unsubSettings(); unsubLobby(); unsubReturned(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyId, playerId, onGameStart]);
 
+  const notAllReturned = returnedCount < players.length;
+
   const handleStart = async () => {
     if (players.length < 2) { setError('Need at least 2 players to start'); return; }
+    if (notAllReturned) { setError(`Waiting for players to return (${returnedCount}/${players.length})`); return; }
     setIsStarting(true);
     setError('');
     try {
@@ -197,9 +211,9 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
             <button
               className="btn btn-green"
               onClick={handleStart}
-              disabled={isStarting || players.length < 2}
+              disabled={isStarting || players.length < 2 || notAllReturned}
             >
-              {isStarting ? 'Starting...' : 'Start Game'}
+              {isStarting ? 'Starting...' : notAllReturned ? `Waiting for players (${returnedCount}/${players.length})` : 'Start Game'}
             </button>
           )}
           {!isHost && (

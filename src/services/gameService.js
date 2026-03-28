@@ -135,5 +135,11 @@ export const getSettings = async (lobbyId) => {
 // Reset lobby back to waiting state after a game ends (for play-again)
 export const resetLobby = async (lobbyId) => {
   await remove(ref(database, `lobbies/${lobbyId}/game`));
+  await remove(ref(database, `lobbies/${lobbyId}/returnedPlayers`));
   await update(ref(database, `lobbies/${lobbyId}`), { status: 'waiting' });
+};
+
+// Mark a player as having returned to the lobby
+export const markPlayerReturned = async (lobbyId, playerId) => {
+  await set(ref(database, `lobbies/${lobbyId}/returnedPlayers/${playerId}`), true);
 };
