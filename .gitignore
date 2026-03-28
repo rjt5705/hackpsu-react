@@ -27,3 +27,6 @@ yarn-error.log*
 .env
 .env.build
 .vercel
+
+# Firebase config JSON (contains sensitive API keys)
+src/firebase-config.json
