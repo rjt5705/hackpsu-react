@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ref, onValue, remove } from 'firebase/database';
 import { database } from '../firebase';
-import { resetLobby } from '../services/gameService';
+import { resetLobby, markPlayerReady } from '../services/gameService';
 
 const toArray = (val) => {
   if (!val) return [];
@@ -112,7 +112,7 @@ function RevealScreen({ lobbyId, playerId, onBackToLobby, onGoHome }) {
             Next Chain →
           </button>
         )}
-        <button className="btn btn-green" onClick={async () => { await resetLobby(lobbyId); onBackToLobby(); }}>
+        <button className="btn btn-green" onClick={async () => { await markPlayerReady(lobbyId, playerId); await resetLobby(lobbyId); onBackToLobby(); }}>
           Back to Lobby
         </button>
       </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { database } from '../firebase';
 import { updateTeamCode, setTeamLanguage, submitTeam } from '../services/gameService';
+import { TASK_TESTS, runTests } from '../taskTests';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
@@ -13,22 +14,28 @@ const LANGUAGES = ['JavaScript', 'Python', 'Java', 'C++'];
 
 const getExtensions = (lang) => {
   switch (lang) {
-    case 'Python':     return [python()];
-    case 'Java':       return [java()];
-    case 'C++':        return [cpp()];
-    default:           return [javascript({ jsx: false })];
+    case 'Python': return [python()];
+    case 'Java':   return [java()];
+    case 'C++':    return [cpp()];
+    default:       return [javascript({ jsx: false })];
   }
 };
 
 function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
-  const [myTeam, setMyTeam]       = useState(null);
-  const [task, setTask]           = useState('');
-  const [code, setCode]           = useState('');
-  const [language, setLanguage]   = useState('JavaScript');
+  const [myTeam, setMyTeam]           = useState(null);
+  const [task, setTask]               = useState('');
+  const [code, setCode]               = useState('');
+  const [language, setLanguage]       = useState('JavaScript');
   const [teamMembers, setTeamMembers] = useState([]);
-  const [playerMap, setPlayerMap] = useState({});
-  const [submitted, setSubmitted] = useState(false);
-  const [winner, setWinner]       = useState(null);
+  const [playerMap, setPlayerMap]     = useState({});
+  const [submitted, setSubmitted]     = useState(false);
+  const [winner, setWinner]           = useState(null);
+
+  // Test runner state
+  const [testResults, setTestResults] = useState(null); // null = not run yet
+  const [testsPassed, setTestsPassed] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
+  const [showTests, setShowTests]     = useState(false);
 
   const lastWrittenCodeRef = useRef('');
   const debounceTimer      = useRef(null);
@@ -66,7 +73,6 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
 
       const team = myTeamRef.current;
       if (!team || !data.teams) return;
-
       const teamData = data.teams[team];
       if (!teamData) return;
 
@@ -74,7 +80,7 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
       setLanguage(teamData.language || 'JavaScript');
       setTeamMembers(Object.keys(teamData.members || {}));
 
-      // Only update code if someone else wrote it (prevent cursor jump)
+      // Only update code if it came from a teammate (prevent cursor jump on own writes)
       if (teamData.code !== lastWrittenCodeRef.current) {
         setCode(teamData.code || '');
       }
@@ -82,12 +88,10 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     return () => unsub();
   }, [lobbyId]);
 
-  // Subscribe to lobby status for game end
+  // Navigate to result screen when game finishes
   useEffect(() => {
     const unsub = onValue(ref(database, `lobbies/${lobbyId}/status`), (snap) => {
-      if (snap.exists() && snap.val() === 'finished') {
-        onGameEnd();
-      }
+      if (snap.exists() && snap.val() === 'finished') onGameEnd();
     });
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -97,6 +101,10 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     if (submitted) return;
     setCode(value);
     lastWrittenCodeRef.current = value;
+    // Reset test results whenever code changes
+    setTestResults(null);
+    setTestsPassed(false);
+    setShowTests(false);
 
     clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
@@ -105,15 +113,39 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     }, 300);
   }, [lobbyId, submitted]);
 
-  const handleLanguageChange = async (e) => {
+  const handleLanguageChange = (e) => {
     const lang = e.target.value;
     setLanguage(lang);
-    if (myTeam) setTeamLanguage(lobbyId, myTeam, lang);
+    setTestResults(null);
+    setTestsPassed(false);
+    setShowTests(false);
+    if (myTeamRef.current) setTeamLanguage(lobbyId, myTeamRef.current, lang);
+  };
+
+  const handleRunTests = async () => {
+    if (testLoading) return;
+    setTestLoading(true);
+    setShowTests(true);
+    try {
+      const { results, allPassed, noTests } = await runTests(code, task, language);
+      if (noTests) {
+        setTestResults([]);
+        setTestsPassed(true);
+      } else {
+        setTestResults(results);
+        setTestsPassed(allPassed);
+      }
+    } catch (e) {
+      setTestResults([{ label: 'Connection error', pass: false, error: e.message }]);
+      setTestsPassed(false);
+    } finally {
+      setTestLoading(false);
+    }
   };
 
   const handleSubmit = async () => {
-    if (!myTeam || submitted) return;
-    await submitTeam(lobbyId, myTeam);
+    if (!myTeamRef.current || submitted) return;
+    await submitTeam(lobbyId, myTeamRef.current);
   };
 
   if (!myTeam) {
@@ -126,6 +158,10 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
 
   const teamLabel = myTeam === 'A' ? 'Team A' : 'Team B';
   const teamClass = myTeam === 'A' ? 'team-a' : 'team-b';
+
+  const hasTestCases = !!TASK_TESTS[task];
+  // Must pass tests before submitting (if test cases exist for this task)
+  const submitBlocked = !submitted && hasTestCases && !testsPassed;
 
   return (
     <div className="tvt-game">
@@ -156,6 +192,38 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
         />
       </div>
 
+      {/* Test results panel */}
+      {showTests && (
+        <div className={`tvt-test-panel ${testLoading ? 'tests-loading' : testsPassed ? 'tests-pass' : 'tests-fail'}`}>
+          <div className="tvt-test-header">
+            {testLoading
+              ? <span>Running tests...</span>
+              : testResults && testResults.length === 0
+                ? <span>No predefined tests for this task — submit when ready</span>
+                : <span>{testsPassed ? '✓ All tests passed' : '✗ Some tests failed'}</span>
+            }
+            <button className="tvt-test-close" onClick={() => setShowTests(false)}>✕</button>
+          </div>
+          {!testLoading && testResults && testResults.length > 0 && (
+            <div className="tvt-test-list">
+              {testResults.map((r, i) => (
+                <div key={i} className={`tvt-test-row ${r.pass ? 'test-pass' : 'test-fail'}`}>
+                  <span className="test-icon">{r.pass ? '✓' : '✗'}</span>
+                  <span className="test-label">{r.label}</span>
+                  {!r.pass && (
+                    <span className="test-detail">
+                      {r.error
+                        ? `Error: ${r.error}`
+                        : `got ${r.got !== undefined ? JSON.stringify(r.got) : '?'}`}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="tvt-footer">
         <select
           className="lang-select"
@@ -163,10 +231,18 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
           onChange={handleLanguageChange}
           disabled={submitted}
         >
-          {LANGUAGES.map((l) => (
-            <option key={l} value={l}>{l}</option>
-          ))}
+          {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
         </select>
+
+        {!submitted && hasTestCases && (
+          <button
+            className={`btn-run-tests ${testLoading ? 'btn-run-loading' : ''}`}
+            onClick={handleRunTests}
+            disabled={testLoading}
+          >
+            {testLoading ? 'Running...' : 'Run Tests'}
+          </button>
+        )}
 
         {winner ? (
           <span className={`tvt-winner-label ${winner === myTeam ? 'tvt-you-won' : 'tvt-you-lost'}`}>
@@ -174,11 +250,16 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
           </span>
         ) : (
           <button
-            className={`btn-tvt-submit ${submitted ? 'btn-tvt-submitted' : ''}`}
+            className={`btn-tvt-submit ${submitted ? 'btn-tvt-submitted' : ''} ${submitBlocked ? 'btn-tvt-blocked' : ''}`}
             onClick={handleSubmit}
-            disabled={submitted}
+            disabled={submitted || submitBlocked}
+            title={submitBlocked ? 'Run tests and pass them before submitting' : ''}
           >
-            {submitted ? 'Submitted — waiting...' : 'Submit'}
+            {submitted
+              ? 'Submitted — waiting...'
+              : submitBlocked
+                ? 'Pass tests to submit'
+                : 'Submit'}
           </button>
         )}
       </div>

@@ -36,6 +36,11 @@ export const startGame = async (lobbyId, players, settings) => {
   const N = players.length;
   const playerOrder = players.map((p) => p.id);
 
+  // Reset isReady for all players so the next play-again cycle works correctly
+  await Promise.all(players.map((p) =>
+    set(ref(database, `lobbies/${lobbyId}/players/${p.id}/isReady`), false)
+  ));
+
   // Pick N unique tasks
   const taskBank = toArray(settings.taskBank);
   const tasks = shuffle(taskBank).slice(0, N);
@@ -153,6 +158,13 @@ export const setTeamAssignment = async (lobbyId, playerId, team) => {
 };
 
 export const startTeamGame = async (lobbyId, teamAssignments, settings) => {
+  const playerIds = Object.keys(teamAssignments);
+
+  // Reset isReady for all players so the next play-again cycle works correctly
+  await Promise.all(playerIds.map((pid) =>
+    set(ref(database, `lobbies/${lobbyId}/players/${pid}/isReady`), false)
+  ));
+
   const task = shuffle(toArray(settings.taskBank))[0];
   const members = { A: {}, B: {} };
   Object.entries(teamAssignments).forEach(([pid, team]) => {
@@ -191,8 +203,8 @@ export const submitTeam = async (lobbyId, team) => {
   await update(ref(database, `lobbies/${lobbyId}`), { status: 'finished' });
 };
 
-// Mark a player as having returned to the lobby
-export const markPlayerReturned = async (lobbyId, playerId) => {
+// Mark a player as ready (called when they click "Back to Lobby" on any result screen)
+export const markPlayerReady = async (lobbyId, playerId) => {
   if (!lobbyId || !playerId) return;
-  await set(ref(database, `lobbies/${lobbyId}/returnedPlayers/${playerId}`), true);
+  await set(ref(database, `lobbies/${lobbyId}/players/${playerId}/isReady`), true);
 };

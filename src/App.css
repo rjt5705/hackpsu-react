@@ -1073,6 +1073,21 @@ body {
   cursor: pointer;
 }
 
+.btn-run-tests {
+  padding: 8px 18px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #1e3a5f;
+  color: #60a5fa;
+  border: 1px solid #2563eb;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.btn-run-tests:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+.btn-run-loading { opacity: 0.6; cursor: not-allowed !important; }
+
 .btn-tvt-submit {
   margin-left: auto;
   padding: 9px 28px;
@@ -1093,6 +1108,63 @@ body {
   color: #64748b !important;
   cursor: default !important;
 }
+.btn-tvt-blocked {
+  background: #1c1f2e !important;
+  color: #475569 !important;
+  cursor: not-allowed !important;
+  border: 1px solid #334155;
+}
+
+/* ── Test results panel ── */
+
+.tvt-test-panel {
+  border-top: 1px solid #2d3148;
+  padding: 10px 20px;
+  flex-shrink: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tvt-test-panel.tests-pass    { background: rgba(34,197,94,0.06);  border-color: #166534; }
+.tvt-test-panel.tests-fail    { background: rgba(239,68,68,0.06);  border-color: #7f1d1d; }
+.tvt-test-panel.tests-loading { background: rgba(99,102,241,0.06); border-color: #3730a3; }
+
+.tvt-test-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.tests-pass .tvt-test-header { color: #22c55e; }
+.tests-fail .tvt-test-header { color: #f87171; }
+
+.tvt-test-close {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 4px;
+}
+
+.tvt-test-list { display: flex; flex-direction: column; gap: 4px; }
+
+.tvt-test-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.82rem;
+  padding: 3px 0;
+}
+.test-icon { font-size: 0.75rem; flex-shrink: 0; }
+.test-pass .test-icon { color: #22c55e; }
+.test-fail .test-icon { color: #f87171; }
+
+.test-label { color: #e2e8f0; }
+.test-detail { color: #f87171; font-family: monospace; font-size: 0.78rem; margin-left: auto; }
+.test-no-cases { font-size: 0.82rem; color: #64748b; }
 
 .tvt-winner-label {
   margin-left: auto;

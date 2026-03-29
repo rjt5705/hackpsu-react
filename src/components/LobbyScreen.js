@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { subscribeToPlayers, kickPlayer, leaveLobby } from '../services/lobbyService';
-import { updateSettings, startGame, markPlayerReturned, updateGameMode, DEFAULT_TASKS, setTeamAssignment, startTeamGame } from '../services/gameService';
+import { updateSettings, startGame, updateGameMode, DEFAULT_TASKS, setTeamAssignment, startTeamGame } from '../services/gameService';
 import { ref, onValue, remove } from 'firebase/database';
 import { database } from '../firebase';
 
@@ -19,9 +19,8 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   const [error, setError]         = useState('');
   const [newTask, setNewTask]     = useState('');
   const [showTasks, setShowTasks] = useState(false);
-  const [copied, setCopied]       = useState(false);
-  const [returnedIds, setReturnedIds] = useState(new Set());
-  const [graceExpired, setGraceExpired] = useState(false);
+  const [copied, setCopied]             = useState(false);
+  const [hasResetAt, setHasResetAt]     = useState(false);
   const [teamAssignments, setTeamAssignments] = useState({});
 
   const [codingTimeRaw, setCodingTimeRaw]     = useState('60');
@@ -33,11 +32,6 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   }, [settings.codingTime, settings.guessingTime]);
 
   const isLeavingRef  = useRef(false);
-  const graceTimerRef = useRef(null);
-
-  useEffect(() => {
-    markPlayerReturned(lobbyId, playerId);
-  }, [lobbyId, playerId]);
 
   useEffect(() => {
     const unsubPlayers = subscribeToPlayers(lobbyId, (list) => {
@@ -61,25 +55,16 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
       }
     });
 
-    const unsubReturned = onValue(ref(database, `lobbies/${lobbyId}/returnedPlayers`), (snap) => {
-      setReturnedIds(snap.exists() ? new Set(Object.keys(snap.val())) : new Set());
-    });
-
     const unsubTeams = onValue(ref(database, `lobbies/${lobbyId}/teamAssignments`), (snap) => {
       setTeamAssignments(snap.exists() ? snap.val() : {});
     });
 
     const unsubResetAt = onValue(ref(database, `lobbies/${lobbyId}/resetAt`), (snap) => {
-      clearTimeout(graceTimerRef.current);
-      setGraceExpired(false);
-      if (!snap.exists()) return;
-      const remaining = Math.max(0, 60000 - (Date.now() - snap.val()));
-      graceTimerRef.current = setTimeout(() => setGraceExpired(true), remaining);
+      setHasResetAt(snap.exists());
     });
 
     return () => {
-      unsubPlayers(); unsubSettings(); unsubLobby(); unsubReturned(); unsubResetAt(); unsubTeams();
-      clearTimeout(graceTimerRef.current);
+      unsubPlayers(); unsubSettings(); unsubLobby(); unsubTeams(); unsubResetAt();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyId, playerId, onGameStart]);
@@ -96,8 +81,9 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, lobbyId]);
 
-  const waitingOn      = players.filter((p) => !returnedIds.has(p.id));
-  const notAllReturned = !graceExpired && waitingOn.length > 0;
+  // Only block start after a play-again reset (hasResetAt) until every player marks isReady
+  const waitingOn      = players.filter((p) => !p.isReady);
+  const notAllReturned = hasResetAt && waitingOn.length > 0;
 
   // ── Handlers ──────────────────────────────────────────────
 
@@ -106,6 +92,11 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
     if (notAllReturned)      { setError(`Waiting for ${waitingOn.length} player(s) to return`); return; }
 
     if (gameMode === 'team_vs_team') {
+      const unassigned = players.filter((p) => !teamAssignments[p.id]);
+      if (unassigned.length > 0) {
+        setError(`All players must pick a team (${unassigned.length} haven't yet)`);
+        return;
+      }
       const teamA = players.filter((p) => teamAssignments[p.id] === 'A');
       const teamB = players.filter((p) => teamAssignments[p.id] === 'B');
       if (teamA.length < 1 || teamB.length < 1) {
@@ -213,7 +204,7 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
         <div className="lobby-panel lobby-panel-grow">
           <div className="panel-label">Settings</div>
 
-          {gameMode === 'gartic_phone' || gameMode === 'team_vs_team' ? (
+          {gameMode === 'gartic_phone' ? (
             <div className="settings-content">
               <div className="setting-row">
                 <label>Coding time (s)</label>
@@ -275,6 +266,41 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
                 </div>
               )}
             </div>
+          ) : gameMode === 'team_vs_team' ? (
+            <div className="settings-content">
+              {isHost ? (
+                <div className="task-bank-toggle">
+                  <button className="btn btn-outline btn-sm" onClick={() => setShowTasks((v) => !v)}>
+                    {showTasks ? 'Hide Tasks' : `Task Bank (${taskBank.length})`}
+                  </button>
+                  {showTasks && (
+                    <div className="task-list-wrap">
+                      <ul className="task-list">
+                        {taskBank.map((task, i) => (
+                          <li key={i} className="task-item">
+                            <span>{task}</span>
+                            <button className="btn-kick" onClick={() => handleRemoveTask(i)}>✕</button>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="add-task-row">
+                        <input
+                          className="text-input"
+                          type="text"
+                          placeholder="Add a task..."
+                          value={newTask}
+                          onChange={(e) => setNewTask(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                        />
+                        <button className="btn btn-blue btn-sm" onClick={handleAddTask}>Add</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="coming-soon-text">Task bank managed by host.</p>
+              )}
+            </div>
           ) : (
             <p className="coming-soon-text">Settings for this mode coming soon.</p>
           )}
@@ -307,8 +333,8 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
                       Team {teamAssignments[p.id]}
                     </span>
                   )}
-                  {!returnedIds.has(p.id) && p.id !== playerId && gameMode !== 'team_vs_team' && (
-                    <span className="not-returned">returning...</span>
+                  {hasResetAt && !p.isReady && p.id !== playerId && (
+                    <span className="not-returned">not ready</span>
                   )}
                 </div>
                 {isHost && p.id !== playerId && (

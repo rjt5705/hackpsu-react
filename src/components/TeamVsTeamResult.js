@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { database } from '../firebase';
-import { resetLobby } from '../services/gameService';
+import { resetLobby, markPlayerReady } from '../services/gameService';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
@@ -103,7 +103,7 @@ function TeamVsTeamResult({ lobbyId, playerId, onBackToLobby, onGoHome }) {
       <div className="reveal-actions">
         <button
           className="btn btn-green"
-          onClick={async () => { await resetLobby(lobbyId); onBackToLobby(); }}
+          onClick={async () => { await markPlayerReady(lobbyId, playerId); await resetLobby(lobbyId); onBackToLobby(); }}
         >
           Back to Lobby
         </button>
