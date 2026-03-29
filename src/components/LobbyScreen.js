@@ -25,6 +25,7 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   const [hasResetAt, setHasResetAt]     = useState(false);
   const [teamAssignments, setTeamAssignments] = useState({});
   const [showBattleRoyale, setShowBattleRoyale] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false); // Add this to prevent duplicate navigation
 
   const [codingTimeRaw, setCodingTimeRaw]     = useState('60');
   const [guessingTimeRaw, setGuessingTimeRaw] = useState('30');
@@ -55,13 +56,17 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
         setIsHost(data.hostId === playerId);
         setGameMode(data.gameMode || 'gartic_phone');
         
-        // Handle battle royale mode separately
-        if (data.status === 'playing' && data.gameMode === 'battle_royal') {
-          setShowBattleRoyale(true);
-        } 
-        // For other game modes, call onGameStart
-        else if (data.status === 'playing') {
-          onGameStart(data.gameMode || 'gartic_phone');
+        // Handle game start for ALL game modes
+        if (data.status === 'playing' && !gameStarted) {
+          setGameStarted(true);
+          
+          if (data.gameMode === 'battle_royal') {
+            setShowBattleRoyale(true);
+          } else if (data.gameMode === 'team_vs_team') {
+            onGameStart('team_vs_team');
+          } else {
+            onGameStart('gartic_phone');
+          }
         }
       }
     });
@@ -75,10 +80,21 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
     });
 
     return () => {
-      unsubPlayers(); unsubSettings(); unsubLobby(); unsubTeams(); unsubResetAt();
+      unsubPlayers(); 
+      unsubSettings(); 
+      unsubLobby(); 
+      unsubTeams(); 
+      unsubResetAt();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyId, playerId, onGameStart]);
+
+  // Reset gameStarted when leaving battle royale
+  useEffect(() => {
+    if (!showBattleRoyale) {
+      setGameStarted(false);
+    }
+  }, [showBattleRoyale]);
 
   // 10-minute idle cleanup (host only)
   useEffect(() => {
@@ -121,13 +137,12 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
     try {
       if (gameMode === 'battle_royal') {
         // Update lobby status to playing with battle royale mode
-        // This will trigger the useEffect above for ALL players
         await update(ref(database, `lobbies/${lobbyId}`), {
           status: 'playing',
           gameMode: 'battle_royal',
           gameStartedAt: Date.now()
         });
-        // Don't set showBattleRoyale here - let the Firebase listener do it for all players
+        // The useEffect will handle navigation for ALL players
       } else if (gameMode === 'team_vs_team') {
         await startTeamGame(lobbyId, teamAssignments, settings);
       } else {
@@ -214,6 +229,7 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
         onGameEnd={() => {
           setShowBattleRoyale(false);
           setIsStarting(false);
+          setGameStarted(false);
         }}
       />
     );
