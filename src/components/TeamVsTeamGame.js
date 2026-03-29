@@ -27,12 +27,17 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
 
   // CodeMirror view ref — we manage code directly through the view instead of React state
   // so that remote updates can preserve the local cursor position.
-  const editorViewRef      = useRef(null);
-  const lastWrittenCodeRef = useRef('');
-  const lastSyncedCodeRef  = useRef('');
-  const debounceTimer      = useRef(null);
-  const myTeamRef          = useRef(null);
-  const submittedRef       = useRef(false);
+  const editorViewRef       = useRef(null);
+  const lastWrittenCodeRef  = useRef('');
+  const lastSyncedCodeRef   = useRef('');
+  const lastLocalTypeTimeRef = useRef(0); // timestamp of last local keystroke
+  const debounceTimer       = useRef(null);
+  const myTeamRef           = useRef(null);
+  const submittedRef        = useRef(false);
+
+  // How long (ms) after a local keystroke to block remote updates.
+  // Prevents the teammate's code from jumping your cursor while you're actively typing.
+  const TYPING_GRACE_MS = 1000;
 
   const getEditorCode = () => editorViewRef.current?.state.doc.toString() ?? '';
 
@@ -40,7 +45,12 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
   // Using view.dispatch (not the value prop) lets us:
   //   1. Annotate the transaction as 'remote' so onChange ignores it
   //   2. Preserve our cursor position instead of resetting it to 0
+  //   3. Skip the update entirely if the local player is actively typing
   const applyRemoteCode = useCallback((remoteCode) => {
+    // If the local player typed recently, don't overwrite their document —
+    // it would move their cursor into the teammate's code mid-keystroke.
+    if (Date.now() - lastLocalTypeTimeRef.current < TYPING_GRACE_MS) return;
+
     const view = editorViewRef.current;
     if (!view) return;
     const current = view.state.doc.toString();
@@ -52,7 +62,7 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
       selection: { anchor: cursorPos },
       annotations: REMOTE,
     });
-  }, []);
+  }, [TYPING_GRACE_MS]);
 
   // Keep submittedRef in sync so the interval closure doesn't go stale
   useEffect(() => { submittedRef.current = submitted; }, [submitted]);
@@ -135,6 +145,7 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     );
     if (isRemote) return;
 
+    lastLocalTypeTimeRef.current = Date.now(); // record that the local player is actively typing
     lastWrittenCodeRef.current = value;
     setTestResults(null);
     setTestsPassed(false);
