@@ -1,30 +1,137 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, runTransaction, set } from 'firebase/database';
 import { database } from '../firebase';
-import { updateTeamCode, submitTeam } from '../services/gameService';
+import { submitTeam } from '../services/gameService';
 import { TASK_TESTS, runTests } from '../taskTests';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { collab, receiveUpdates, sendableUpdates, getSyncedVersion } from '@codemirror/collab';
+import { ChangeSet, Text } from '@codemirror/state';
+
+// Replay all stored steps onto an empty document to get current state + version.
+// Skips the synthetic _init placeholder written by startTeamGame.
+function buildDocFromSteps(steps) {
+  let doc = Text.of(['']);
+  const stepKeys = Object.keys(steps || {})
+    .filter(k => k !== '_init')
+    .map(Number)
+    .sort((a, b) => a - b);
+  for (const key of stepKeys) {
+    const stepData = steps[key];
+    try {
+      const cs = ChangeSet.fromJSON(JSON.parse(stepData.changes));
+      doc = cs.apply(doc);
+    } catch (e) {
+      console.error('OT: failed to apply step', key, e);
+    }
+  }
+  return { doc: doc.toString(), version: stepKeys.length };
+}
 
 function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
   const [myTeam, setMyTeam]           = useState(null);
   const [task, setTask]               = useState('');
-  const [code, setCode]               = useState('');
   const [teamMembers, setTeamMembers] = useState([]);
   const [playerMap, setPlayerMap]     = useState({});
   const [submitted, setSubmitted]     = useState(false);
   const [winner, setWinner]           = useState(null);
 
   // Test runner state
-  const [testResults, setTestResults] = useState(null); // null = not run yet
+  const [testResults, setTestResults] = useState(null);
   const [testsPassed, setTestsPassed] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
   const [showTests, setShowTests]     = useState(false);
 
-  const lastWrittenCodeRef = useRef('');
-  const debounceTimer      = useRef(null);
-  const myTeamRef          = useRef(null);
+  // null = waiting for initial collab snapshot; { doc, version } = ready to mount editor
+  const [collabInit, setCollabInit]   = useState(null);
+
+  const editorViewRef          = useRef(null);
+  const myTeamRef              = useRef(null);
+  const submittedRef           = useRef(false);
+  const isPushingRef           = useRef(false);
+  const pushTimerRef           = useRef(null);
+  const collabInitializedRef   = useRef(false); // true after first collab snapshot
+  const latestCollabDataRef    = useRef(null);  // latest snapshot if editor wasn't mounted yet
+
+  const getEditorCode = () => editorViewRef.current?.state.doc.toString() ?? '';
+
+  useEffect(() => { submittedRef.current = submitted; }, [submitted]);
+
+  // Push any locally pending collab steps to Firebase atomically.
+  // Uses runTransaction so two clients can't commit the same version slot.
+  const pushSteps = useCallback(async () => {
+    if (isPushingRef.current) return;
+    const view = editorViewRef.current;
+    if (!view) return;
+    const team = myTeamRef.current;
+    if (!team || submittedRef.current) return;
+
+    const updates = sendableUpdates(view.state);
+    if (!updates.length) return;
+
+    const localVersion = getSyncedVersion(view.state);
+
+    isPushingRef.current = true;
+    try {
+      const collabRef = ref(database, `lobbies/${lobbyId}/game/teams/${team}/collab`);
+      let committed = false;
+
+      await runTransaction(collabRef, (current) => {
+        if (!current) return undefined; // collab node missing — abort
+        if (current.version !== localVersion) return undefined; // version mismatch — abort, wait for remote
+
+        const newSteps = { ...(current.steps || {}) };
+        updates.forEach((update, i) => {
+          newSteps[current.version + i] = {
+            changes: JSON.stringify(update.changes.toJSON()),
+            clientID: update.clientID,
+          };
+        });
+        committed = true;
+        return {
+          version: current.version + updates.length,
+          steps: newSteps,
+        };
+      });
+
+      if (committed) {
+        // Keep the code snapshot up to date so TeamVsTeamResult can show it
+        await set(
+          ref(database, `lobbies/${lobbyId}/game/teams/${team}/code`),
+          view.state.doc.toString()
+        );
+      }
+    } catch (e) {
+      console.error('OT push error', e);
+    } finally {
+      isPushingRef.current = false;
+    }
+  }, [lobbyId]);
+
+  // Apply a new batch of collab steps to the mounted editor view.
+  const applyCollabSnapshot = useCallback((data) => {
+    const view = editorViewRef.current;
+    if (!view) return;
+
+    const localVersion = getSyncedVersion(view.state);
+    const newStepKeys = Object.keys(data.steps || {})
+      .filter(k => k !== '_init')
+      .map(Number)
+      .filter(k => k >= localVersion)
+      .sort((a, b) => a - b);
+
+    if (newStepKeys.length === 0) return;
+
+    const updates = newStepKeys.map(k => ({
+      changes: ChangeSet.fromJSON(JSON.parse(data.steps[k].changes)),
+      clientID: data.steps[k].clientID,
+    }));
+
+    view.dispatch(receiveUpdates(view.state, updates));
+    // After receiving remote steps, retry any rebased local pending steps
+    pushSteps();
+  }, [pushSteps]);
 
   // Subscribe to team assignment
   useEffect(() => {
@@ -48,7 +155,7 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     return () => unsub();
   }, [lobbyId]);
 
-  // Subscribe to game data
+  // Subscribe to game data (task, winner, team metadata — NOT code, that's in collab now)
   useEffect(() => {
     const unsub = onValue(ref(database, `lobbies/${lobbyId}/game`), (snap) => {
       if (!snap.exists()) return;
@@ -60,17 +167,36 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
       if (!team || !data.teams) return;
       const teamData = data.teams[team];
       if (!teamData) return;
-
       setSubmitted(teamData.submitted || false);
       setTeamMembers(Object.keys(teamData.members || {}));
-
-      // Only update code if it came from a teammate (prevent cursor jump on own writes)
-      if (teamData.code !== lastWrittenCodeRef.current) {
-        setCode(teamData.code || '');
-      }
     });
     return () => unsub();
   }, [lobbyId]);
+
+  // Subscribe to collab steps — handles both initial load and live updates
+  useEffect(() => {
+    if (!myTeam) return;
+    const collabRef = ref(database, `lobbies/${lobbyId}/game/teams/${myTeam}/collab`);
+    const unsub = onValue(collabRef, (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.val();
+
+      if (!collabInitializedRef.current) {
+        // First snapshot — compute the initial doc+version to mount the editor with
+        const init = buildDocFromSteps(data.steps);
+        collabInitializedRef.current = true;
+        setCollabInit(init);
+        // If any steps arrive before the editor mounts, cache them here
+        latestCollabDataRef.current = data;
+        return;
+      }
+
+      // Subsequent snapshots — apply new steps to the mounted editor
+      latestCollabDataRef.current = data;
+      applyCollabSnapshot(data);
+    });
+    return () => unsub();
+  }, [lobbyId, myTeam, applyCollabSnapshot]);
 
   // Navigate to result screen when game finishes
   useEffect(() => {
@@ -81,29 +207,22 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyId]);
 
-  const handleCodeChange = useCallback((value) => {
-    if (submitted) return;
-    setCode(value);
-    lastWrittenCodeRef.current = value;
-    // Reset test results whenever code changes
+  const handleCodeChange = useCallback(() => {
+    if (submittedRef.current) return;
     setTestResults(null);
     setTestsPassed(false);
     setShowTests(false);
-
-    clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      const team = myTeamRef.current;
-      if (team) updateTeamCode(lobbyId, team, value);
-    }, 300);
-  }, [lobbyId, submitted]);
+    // Debounce push so rapid keystrokes batch into fewer Firebase writes
+    clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(() => pushSteps(), 200);
+  }, [pushSteps]);
 
   const handleRunTests = async () => {
     if (testLoading) return;
     setTestLoading(true);
     setShowTests(true);
     try {
-      // runTests now only accepts code and task (JavaScript is the only language)
-      const { results, allPassed, noTests } = runTests(code, task);
+      const { results, allPassed, noTests } = runTests(getEditorCode(), task);
       if (noTests) {
         setTestResults([]);
         setTestsPassed(true);
@@ -124,7 +243,7 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     await submitTeam(lobbyId, myTeamRef.current);
   };
 
-  if (!myTeam) {
+  if (!myTeam || !collabInit) {
     return (
       <div className="screen-center">
         <div className="card"><p>Loading team...</p></div>
@@ -136,7 +255,6 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
   const teamClass = myTeam === 'A' ? 'team-a' : 'team-b';
 
   const hasTestCases = !!TASK_TESTS[task];
-  // Must pass tests before submitting (if test cases exist for this task)
   const submitBlocked = !submitted && hasTestCases && !testsPassed;
 
   return (
@@ -158,10 +276,20 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
 
       <div className="tvt-editor-wrap">
         <CodeMirror
-          value={code}
+          value={collabInit.doc}
           height="100%"
           theme={oneDark}
-          extensions={[javascript({ jsx: false })]}
+          extensions={[
+            collab({ startVersion: collabInit.version, clientID: playerId }),
+            javascript({ jsx: false }),
+          ]}
+          onCreateEditor={(view) => {
+            editorViewRef.current = view;
+            // Apply any collab updates that arrived before the editor mounted
+            if (latestCollabDataRef.current) {
+              applyCollabSnapshot(latestCollabDataRef.current);
+            }
+          }}
           onChange={handleCodeChange}
           readOnly={submitted}
           basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
