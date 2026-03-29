@@ -22,11 +22,12 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
   const [testLoading, setTestLoading] = useState(false);
   const [showTests, setShowTests]     = useState(false);
 
-  const lastWrittenCodeRef = useRef('');
-  const lastSyncedCodeRef  = useRef('');
-  const debounceTimer      = useRef(null);
-  const myTeamRef          = useRef(null);
-  const submittedRef       = useRef(false);
+  const lastWrittenCodeRef  = useRef('');
+  const lastSyncedCodeRef   = useRef('');
+  const lastReceivedCodeRef = useRef(''); // tracks last code received from Firebase
+  const debounceTimer       = useRef(null);
+  const myTeamRef           = useRef(null);
+  const submittedRef        = useRef(false);
 
   // Keep submittedRef in sync so the interval can read it without a stale closure
   useEffect(() => { submittedRef.current = submitted; }, [submitted]);
@@ -85,6 +86,7 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
 
       // Only update code if it came from a teammate (prevent cursor jump on own writes)
       if (teamData.code !== lastWrittenCodeRef.current) {
+        lastReceivedCodeRef.current = teamData.code || '';
         setCode(teamData.code || '');
       }
     });
@@ -102,6 +104,13 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
 
   const handleCodeChange = useCallback((value) => {
     if (submitted) return;
+    // CodeMirror fires onChange even for programmatic value prop updates.
+    // If this value matches what we just received from Firebase, it's an echo — ignore it
+    // to prevent pushing the remote code back and overwriting the active teammate's work.
+    if (value === lastReceivedCodeRef.current) {
+      lastReceivedCodeRef.current = ''; // clear so the next user keystroke isn't suppressed
+      return;
+    }
     setCode(value);
     lastWrittenCodeRef.current = value;
     // Reset test results whenever code changes
