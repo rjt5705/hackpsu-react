@@ -1,31 +1,43 @@
-# Create React App
+# Coding Games
 
-This directory is a brief example of a [Create React App](https://github.com/facebook/create-react-app) site that can be deployed to Vercel with zero configuration.
+## Project Description
+A collaborative hackathon project by **Mark Chen** and **Riley Tong** for the PSU Hackathon. Our site an interactive web platform where players can challenge their programming skills against friends.
 
-## Deploy Your Own
+## What It Is
+We host a web-based platform that hosts various coding games where players can compete against each other in real-time. Whether you're a beginner looking to practice or an experienced developer seeking a challenge, our games provide an engaging way to test and improve your coding abilities.
 
-Deploy your own Create React App project with Vercel.
+## Services We Offer
+The platform features three distinct game modes, each offering a unique coding challenge experience:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/vercel/examples/tree/main/framework-boilerplates/create-react-app&template=create-react-app)
+### 1. Gartic Phone
+A creative coding chain game where players take turns writing code and guessing what code does. Each player starts with a prompt, writes code to solve it, then passes it to another player who must guess what the code does. The chain continues until everyone has participated.
 
-_Live Example: https://create-react-template.vercel.app/_
+### 2. Team vs Team
+A competitive race where two teams compete to solve coding challenges first. Teams work together to write the correct solution, with the fastest team to submit working code claiming victory. The twist? Every team works out of the same text editor! This means teammates will be stepping over each other as changes are made throughout the file as both teams race to finish first.
 
-## Available Scripts
+### 3. Battle Royale
+A last-developer-standing elimination mode where players compete against each other in timed coding challenges. Each round eliminates the slowest or incorrect solutions until only one champion remains. Test your speed and accuracy under pressure!
 
-In the project directory, you can run:
+## What Is the Purpose of This?
+**To have fun!** 
 
-### `npm start`
+The primary goal in mind was to create a fun experience. We believe that learning and practicing programming doesn't have to be a solitary activity. Our platform brings people together through:
+- Friendly competition
+- Creative problem-solving
+- Collaborative learning
+- Pure entertainment
 
-Runs the app in the development mode. Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+Whether you're looking to sharpen your skills, bond with fellow developers, or simply enjoy some coding games with friends, CodeVerse provides a space where programming becomes play.
 
-The page will reload when you make changes. You may also see any lint errors in the console.
+## Tech Stack
+- **Frontend**: React.js
+- **Backend**: Firebase (Authentication, Realtime Database)
+- **Code Execution**: In-browser JavaScript testing
+- **Styling**: Custom CSS
 
-### `npm test`
-
-Launches the test runner in the interactive watch mode. See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.
-
-It correctly bundles React in production mode and optimizes the build for the best performance. The build is minified and the filenames include the hashes.
+## How to Play
+1. Create or join a lobby with friends
+2. Choose your game mode
+3. Wait for the host to start the game
+4. Follow the prompts - write code or guess what code does
+5. Compete to win and have fun!
