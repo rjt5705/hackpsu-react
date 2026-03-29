@@ -127,6 +127,10 @@ export const updateSettings = async (lobbyId, settings) => {
   await update(ref(database, `lobbies/${lobbyId}/settings`), settings);
 };
 
+export const updateGameMode = async (lobbyId, gameMode) => {
+  await set(ref(database, `lobbies/${lobbyId}/gameMode`), gameMode);
+};
+
 export const getSettings = async (lobbyId) => {
   const snap = await get(ref(database, `lobbies/${lobbyId}/settings`));
   return snap.exists() ? snap.val() : { codingTime: 60, guessingTime: 30, taskBank: DEFAULT_TASKS };
