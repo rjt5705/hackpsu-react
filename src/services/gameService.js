@@ -147,6 +147,7 @@ export const resetLobby = async (lobbyId) => {
   await remove(ref(database, `lobbies/${lobbyId}/game`));
   await remove(ref(database, `lobbies/${lobbyId}/returnedPlayers`));
   await remove(ref(database, `lobbies/${lobbyId}/teamAssignments`));
+  await remove(ref(database, `lobbies/${lobbyId}/battleRoyale`));
   await update(ref(database, `lobbies/${lobbyId}`), { status: 'waiting', resetAt: Date.now() });
 };
 
@@ -207,4 +208,93 @@ export const submitTeam = async (lobbyId, team) => {
 export const markPlayerReady = async (lobbyId, playerId) => {
   if (!lobbyId || !playerId) return;
   await set(ref(database, `lobbies/${lobbyId}/players/${playerId}/isReady`), true);
+};
+
+// ── Battle Royale ─────────────────────────────────────────────────────────────
+
+export const BR_STAGE_COUNT = 5;
+export const BR_STAGE_TIME_MS = 60000; // 60 seconds per stage
+
+export const startBattleRoyale = async (lobbyId, players, settings) => {
+  // Reset isReady for all players
+  await Promise.all(players.map((p) =>
+    set(ref(database, `lobbies/${lobbyId}/players/${p.id}/isReady`), false)
+  ));
+
+  const taskBank = toArray(settings.taskBank);
+  const tasks = shuffle(taskBank).slice(0, BR_STAGE_COUNT);
+
+  const now = Date.now();
+  const playerData = {};
+  players.forEach((p) => {
+    playerData[p.id] = {
+      nickname: p.nickname,
+      stage: 0,
+      eliminated: false,
+      stageStartedAt: now,
+      timeBank: BR_STAGE_TIME_MS,
+      completedAt: null,
+      charCount: 0,
+      code: '',
+    };
+  });
+
+  await set(ref(database, `lobbies/${lobbyId}/battleRoyale`), {
+    tasks,
+    gameStartedAt: now,
+    winner: null,
+    finished: false,
+    players: playerData,
+  });
+  await set(ref(database, `lobbies/${lobbyId}/status`), 'playing');
+};
+
+export const updateBRCode = async (lobbyId, playerId, code) => {
+  await update(ref(database, `lobbies/${lobbyId}/battleRoyale/players/${playerId}`), {
+    code,
+    charCount: code.length,
+  });
+};
+
+export const completeBRStage = async (lobbyId, playerId, currentStage, timeRemaining) => {
+  const nextStage = currentStage + 1;
+  const now = Date.now();
+
+  if (nextStage >= BR_STAGE_COUNT) {
+    // Finished all stages!
+    await update(ref(database, `lobbies/${lobbyId}/battleRoyale/players/${playerId}`), {
+      stage: nextStage,
+      completedAt: now,
+      charCount: 0,
+      code: '',
+    });
+  } else {
+    await update(ref(database, `lobbies/${lobbyId}/battleRoyale/players/${playerId}`), {
+      stage: nextStage,
+      stageStartedAt: now,
+      timeBank: BR_STAGE_TIME_MS + Math.max(0, timeRemaining),
+      charCount: 0,
+      code: '',
+    });
+  }
+};
+
+export const eliminateBRPlayer = async (lobbyId, playerId) => {
+  await update(ref(database, `lobbies/${lobbyId}/battleRoyale/players/${playerId}`), {
+    eliminated: true,
+  });
+};
+
+export const setBRWinner = async (lobbyId, winnerId) => {
+  // Use a transaction so multiple clients don't overwrite each other
+  await runTransaction(ref(database, `lobbies/${lobbyId}/battleRoyale/winner`), (current) =>
+    current !== null ? current : (winnerId ?? null)
+  );
+  await update(ref(database, `lobbies/${lobbyId}/battleRoyale`), { finished: true });
+  await update(ref(database, `lobbies/${lobbyId}`), { status: 'finished' });
+};
+
+export const endBattleRoyale = async (lobbyId) => {
+  await update(ref(database, `lobbies/${lobbyId}/battleRoyale`), { finished: true });
+  await update(ref(database, `lobbies/${lobbyId}`), { status: 'finished' });
 };

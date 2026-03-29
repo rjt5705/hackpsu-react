@@ -1,7 +1,7 @@
 // src/components/LobbyScreen.js
 import React, { useState, useEffect, useRef } from 'react';
 import { subscribeToPlayers, kickPlayer, leaveLobby } from '../services/lobbyService';
-import { updateSettings, startGame, updateGameMode, DEFAULT_TASKS, setTeamAssignment, startTeamGame } from '../services/gameService';
+import { updateSettings, startGame, updateGameMode, DEFAULT_TASKS, setTeamAssignment, startTeamGame, startBattleRoyale } from '../services/gameService';
 import { ref, onValue, remove, update } from 'firebase/database';
 import { database } from '../firebase';
 import BattleRoyaleScreen from './BattleRoyaleScreen';
@@ -136,13 +136,12 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
     setError('');
     try {
       if (gameMode === 'battle_royal') {
-        // Update lobby status to playing with battle royale mode
-        await update(ref(database, `lobbies/${lobbyId}`), {
-          status: 'playing',
-          gameMode: 'battle_royal',
-          gameStartedAt: Date.now()
-        });
-        // The useEffect will handle navigation for ALL players
+        if (players.length > 5) {
+          setError('Battle Royale supports a maximum of 5 players');
+          setIsStarting(false);
+          return;
+        }
+        await startBattleRoyale(lobbyId, players, settings);
       } else if (gameMode === 'team_vs_team') {
         await startTeamGame(lobbyId, teamAssignments, settings);
       } else {
@@ -226,6 +225,7 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
       <BattleRoyaleScreen
         lobbyId={lobbyId}
         playerId={playerId}
+        isHost={isHost}
         onGameEnd={() => {
           setShowBattleRoyale(false);
           setIsStarting(false);
