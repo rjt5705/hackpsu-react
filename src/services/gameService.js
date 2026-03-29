@@ -176,8 +176,8 @@ export const startTeamGame = async (lobbyId, teamAssignments, settings) => {
     startedAt: Date.now(),
     winner: null,
     teams: {
-      A: { code: '', language: 'JavaScript', submitted: false, submittedAt: null, members: members.A },
-      B: { code: '', language: 'JavaScript', submitted: false, submittedAt: null, members: members.B },
+      A: { code: '', language: 'JavaScript', submitted: false, submittedAt: null, members: members.A, collab: { version: 0, steps: { _init: true } } },
+      B: { code: '', language: 'JavaScript', submitted: false, submittedAt: null, members: members.B, collab: { version: 0, steps: { _init: true } } },
     },
   };
 
