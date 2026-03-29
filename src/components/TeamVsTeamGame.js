@@ -23,8 +23,27 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
   const [showTests, setShowTests]     = useState(false);
 
   const lastWrittenCodeRef = useRef('');
+  const lastSyncedCodeRef  = useRef('');
   const debounceTimer      = useRef(null);
   const myTeamRef          = useRef(null);
+  const submittedRef       = useRef(false);
+
+  // Keep submittedRef in sync so the interval can read it without a stale closure
+  useEffect(() => { submittedRef.current = submitted; }, [submitted]);
+
+  // Periodic sync every 500ms so teammates always see current code
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (submittedRef.current) return;
+      const team = myTeamRef.current;
+      const value = lastWrittenCodeRef.current;
+      if (team && value !== lastSyncedCodeRef.current) {
+        lastSyncedCodeRef.current = value;
+        updateTeamCode(lobbyId, team, value);
+      }
+    }, 500);
+    return () => clearInterval(id);
+  }, [lobbyId]);
 
   // Subscribe to team assignment
   useEffect(() => {
@@ -91,10 +110,19 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     setShowTests(false);
 
     clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
+
+    const charsSinceSync = Math.abs(value.length - lastSyncedCodeRef.current.length);
+    if (charsSinceSync >= 5) {
+      lastSyncedCodeRef.current = value;
       const team = myTeamRef.current;
       if (team) updateTeamCode(lobbyId, team, value);
-    }, 300);
+    } else {
+      debounceTimer.current = setTimeout(() => {
+        lastSyncedCodeRef.current = value;
+        const team = myTeamRef.current;
+        if (team) updateTeamCode(lobbyId, team, value);
+      }, 300);
+    }
   }, [lobbyId, submitted]);
 
   const handleRunTests = async () => {
