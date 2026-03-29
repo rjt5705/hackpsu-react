@@ -1,31 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { database } from '../firebase';
-import { updateTeamCode, setTeamLanguage, submitTeam } from '../services/gameService';
+import { updateTeamCode, submitTeam } from '../services/gameService';
 import { TASK_TESTS, runTests } from '../taskTests';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
-import { java } from '@codemirror/lang-java';
-import { cpp } from '@codemirror/lang-cpp';
 import { oneDark } from '@codemirror/theme-one-dark';
-
-const LANGUAGES = ['JavaScript', 'Python', 'Java', 'C++'];
-
-const getExtensions = (lang) => {
-  switch (lang) {
-    case 'Python': return [python()];
-    case 'Java':   return [java()];
-    case 'C++':    return [cpp()];
-    default:       return [javascript({ jsx: false })];
-  }
-};
 
 function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
   const [myTeam, setMyTeam]           = useState(null);
   const [task, setTask]               = useState('');
   const [code, setCode]               = useState('');
-  const [language, setLanguage]       = useState('JavaScript');
   const [teamMembers, setTeamMembers] = useState([]);
   const [playerMap, setPlayerMap]     = useState({});
   const [submitted, setSubmitted]     = useState(false);
@@ -77,7 +62,6 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
       if (!teamData) return;
 
       setSubmitted(teamData.submitted || false);
-      setLanguage(teamData.language || 'JavaScript');
       setTeamMembers(Object.keys(teamData.members || {}));
 
       // Only update code if it came from a teammate (prevent cursor jump on own writes)
@@ -113,21 +97,13 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     }, 300);
   }, [lobbyId, submitted]);
 
-  const handleLanguageChange = (e) => {
-    const lang = e.target.value;
-    setLanguage(lang);
-    setTestResults(null);
-    setTestsPassed(false);
-    setShowTests(false);
-    if (myTeamRef.current) setTeamLanguage(lobbyId, myTeamRef.current, lang);
-  };
-
   const handleRunTests = async () => {
     if (testLoading) return;
     setTestLoading(true);
     setShowTests(true);
     try {
-      const { results, allPassed, noTests } = await runTests(code, task, language);
+      // runTests now only accepts code and task (JavaScript is the only language)
+      const { results, allPassed, noTests } = runTests(code, task);
       if (noTests) {
         setTestResults([]);
         setTestsPassed(true);
@@ -136,7 +112,7 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
         setTestsPassed(allPassed);
       }
     } catch (e) {
-      setTestResults([{ label: 'Connection error', pass: false, error: e.message }]);
+      setTestResults([{ label: 'Test error', pass: false, error: e.message }]);
       setTestsPassed(false);
     } finally {
       setTestLoading(false);
@@ -185,7 +161,7 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
           value={code}
           height="100%"
           theme={oneDark}
-          extensions={getExtensions(language)}
+          extensions={[javascript({ jsx: false })]}
           onChange={handleCodeChange}
           readOnly={submitted}
           basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
@@ -225,15 +201,6 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
       )}
 
       <div className="tvt-footer">
-        <select
-          className="lang-select"
-          value={language}
-          onChange={handleLanguageChange}
-          disabled={submitted}
-        >
-          {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
-        </select>
-
         {!submitted && hasTestCases && (
           <button
             className={`btn-run-tests ${testLoading ? 'btn-run-loading' : ''}`}

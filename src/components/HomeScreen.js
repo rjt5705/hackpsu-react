@@ -56,15 +56,14 @@ function HomeScreen({ onEnterLobby }) {
   return (
     <div className="screen-center">
       <div className="card">
-        <h1 className="game-title">Gartic Phone: Code Edition</h1>
-        <p className="subtitle">A chain-style coding party game</p>
+        <h1 className="game-title">Join A Game</h1>
 
         <div className="input-group">
           <label>Nickname</label>
           <input
             className="text-input"
             type="text"
-            placeholder="Your name"
+            placeholder="Your Name"
             value={nickname}
             maxLength={20}
             onChange={(e) => setNickname(e.target.value)}
@@ -73,7 +72,7 @@ function HomeScreen({ onEnterLobby }) {
         </div>
 
         <div className="input-group">
-          <label>Room Code <span className="label-hint">(leave blank to create)</span></label>
+          <label>Room Code</label>
           <input
             className="text-input"
             type="text"
