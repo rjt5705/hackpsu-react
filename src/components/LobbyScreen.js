@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { subscribeToPlayers, kickPlayer, leaveLobby } from '../services/lobbyService';
 import { updateSettings, startGame, updateGameMode, DEFAULT_TASKS, setTeamAssignment, startTeamGame, startBattleRoyale } from '../services/gameService';
-import { ref, onValue, remove, update } from 'firebase/database';
+import { ref, onValue, remove} from 'firebase/database';
 import { database } from '../firebase';
 import BattleRoyaleScreen from './BattleRoyaleScreen';
 
