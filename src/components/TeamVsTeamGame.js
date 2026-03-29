@@ -6,33 +6,58 @@ import { TASK_TESTS, runTests } from '../taskTests';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { Transaction } from '@codemirror/state';
+
+// Annotation used to mark remote (Firebase-sourced) dispatches so onChange can ignore them
+const REMOTE = Transaction.userEvent.of('remote');
 
 function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
   const [myTeam, setMyTeam]           = useState(null);
   const [task, setTask]               = useState('');
-  const [code, setCode]               = useState('');
   const [teamMembers, setTeamMembers] = useState([]);
   const [playerMap, setPlayerMap]     = useState({});
   const [submitted, setSubmitted]     = useState(false);
   const [winner, setWinner]           = useState(null);
 
   // Test runner state
-  const [testResults, setTestResults] = useState(null); // null = not run yet
+  const [testResults, setTestResults] = useState(null);
   const [testsPassed, setTestsPassed] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
   const [showTests, setShowTests]     = useState(false);
 
-  const lastWrittenCodeRef  = useRef('');
-  const lastSyncedCodeRef   = useRef('');
-  const lastReceivedCodeRef = useRef(''); // tracks last code received from Firebase
-  const debounceTimer       = useRef(null);
-  const myTeamRef           = useRef(null);
-  const submittedRef        = useRef(false);
+  // CodeMirror view ref — we manage code directly through the view instead of React state
+  // so that remote updates can preserve the local cursor position.
+  const editorViewRef      = useRef(null);
+  const lastWrittenCodeRef = useRef('');
+  const lastSyncedCodeRef  = useRef('');
+  const debounceTimer      = useRef(null);
+  const myTeamRef          = useRef(null);
+  const submittedRef       = useRef(false);
 
-  // Keep submittedRef in sync so the interval can read it without a stale closure
+  const getEditorCode = () => editorViewRef.current?.state.doc.toString() ?? '';
+
+  // Apply a teammate's code update directly to the CodeMirror view.
+  // Using view.dispatch (not the value prop) lets us:
+  //   1. Annotate the transaction as 'remote' so onChange ignores it
+  //   2. Preserve our cursor position instead of resetting it to 0
+  const applyRemoteCode = useCallback((remoteCode) => {
+    const view = editorViewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current === remoteCode) return;
+    // Clamp cursor so it stays valid inside the new (possibly shorter) document
+    const cursorPos = Math.min(view.state.selection.main.head, remoteCode.length);
+    view.dispatch({
+      changes: { from: 0, to: current.length, insert: remoteCode },
+      selection: { anchor: cursorPos },
+      annotations: REMOTE,
+    });
+  }, []);
+
+  // Keep submittedRef in sync so the interval closure doesn't go stale
   useEffect(() => { submittedRef.current = submitted; }, [submitted]);
 
-  // Periodic sync every 500ms so teammates always see current code
+  // Periodic sync every 500ms — only fires when code actually changed since last push
   useEffect(() => {
     const id = setInterval(() => {
       if (submittedRef.current) return;
@@ -84,14 +109,13 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
       setSubmitted(teamData.submitted || false);
       setTeamMembers(Object.keys(teamData.members || {}));
 
-      // Only update code if it came from a teammate (prevent cursor jump on own writes)
+      // Only apply if it came from a teammate, not our own write echoing back
       if (teamData.code !== lastWrittenCodeRef.current) {
-        lastReceivedCodeRef.current = teamData.code || '';
-        setCode(teamData.code || '');
+        applyRemoteCode(teamData.code || '');
       }
     });
     return () => unsub();
-  }, [lobbyId]);
+  }, [lobbyId, applyRemoteCode]);
 
   // Navigate to result screen when game finishes
   useEffect(() => {
@@ -102,18 +126,16 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyId]);
 
-  const handleCodeChange = useCallback((value) => {
+  const handleCodeChange = useCallback((value, viewUpdate) => {
     if (submitted) return;
-    // CodeMirror fires onChange even for programmatic value prop updates.
-    // If this value matches what we just received from Firebase, it's an echo — ignore it
-    // to prevent pushing the remote code back and overwriting the active teammate's work.
-    if (value === lastReceivedCodeRef.current) {
-      lastReceivedCodeRef.current = ''; // clear so the next user keystroke isn't suppressed
-      return;
-    }
-    setCode(value);
+    // If every transaction in this update is annotated as 'remote', it came from
+    // applyRemoteCode — not a user keystroke. Skip it to prevent echo back to Firebase.
+    const isRemote = viewUpdate?.transactions?.every(
+      tr => tr.annotation(Transaction.userEvent) === 'remote'
+    );
+    if (isRemote) return;
+
     lastWrittenCodeRef.current = value;
-    // Reset test results whenever code changes
     setTestResults(null);
     setTestsPassed(false);
     setShowTests(false);
@@ -139,8 +161,7 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
     setTestLoading(true);
     setShowTests(true);
     try {
-      // runTests now only accepts code and task (JavaScript is the only language)
-      const { results, allPassed, noTests } = runTests(code, task);
+      const { results, allPassed, noTests } = runTests(getEditorCode(), task);
       if (noTests) {
         setTestResults([]);
         setTestsPassed(true);
@@ -173,7 +194,6 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
   const teamClass = myTeam === 'A' ? 'team-a' : 'team-b';
 
   const hasTestCases = !!TASK_TESTS[task];
-  // Must pass tests before submitting (if test cases exist for this task)
   const submitBlocked = !submitted && hasTestCases && !testsPassed;
 
   return (
@@ -195,10 +215,10 @@ function TeamVsTeamGame({ lobbyId, playerId, onGameEnd }) {
 
       <div className="tvt-editor-wrap">
         <CodeMirror
-          value={code}
           height="100%"
           theme={oneDark}
           extensions={[javascript({ jsx: false })]}
+          onCreateEditor={(view) => { editorViewRef.current = view; }}
           onChange={handleCodeChange}
           readOnly={submitted}
           basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
