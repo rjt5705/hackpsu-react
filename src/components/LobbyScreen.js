@@ -1,13 +1,15 @@
+// src/components/LobbyScreen.js
 import React, { useState, useEffect, useRef } from 'react';
 import { subscribeToPlayers, kickPlayer, leaveLobby } from '../services/lobbyService';
 import { updateSettings, startGame, updateGameMode, DEFAULT_TASKS, setTeamAssignment, startTeamGame } from '../services/gameService';
-import { ref, onValue, remove } from 'firebase/database';
+import { ref, onValue, remove, update } from 'firebase/database';
 import { database } from '../firebase';
+import BattleRoyaleScreen from './BattleRoyaleScreen';
 
 const GAME_MODES = [
   { id: 'gartic_phone',  name: 'Gartic Phone',       icon: '🎨', desc: 'Code the prompt, guess the code' },
-  { id: 'team_vs_team',  name: 'Team vs Team',        icon: '⚔️',  desc: 'Race to submit — first team wins' },
-  { id: 'battle_royal',  name: 'Battle Royal Coding', icon: '🏆', desc: 'Coming soon' },
+  { id: 'team_vs_team',  name: 'Team vs Team',        icon: '⚔️',  desc: 'Race to submit - first team wins' },
+  { id: 'battle_royal',  name: 'Battle Royal Coding', icon: '🏆', desc: 'Be the Last one Standing' },
 ];
 
 function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
@@ -22,6 +24,7 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   const [copied, setCopied]             = useState(false);
   const [hasResetAt, setHasResetAt]     = useState(false);
   const [teamAssignments, setTeamAssignments] = useState({});
+  const [showBattleRoyale, setShowBattleRoyale] = useState(false);
 
   const [codingTimeRaw, setCodingTimeRaw]     = useState('60');
   const [guessingTimeRaw, setGuessingTimeRaw] = useState('30');
@@ -51,7 +54,15 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
         const data = snap.val();
         setIsHost(data.hostId === playerId);
         setGameMode(data.gameMode || 'gartic_phone');
-        if (data.status === 'playing') onGameStart(data.gameMode || 'gartic_phone');
+        
+        // Handle battle royale mode separately
+        if (data.status === 'playing' && data.gameMode === 'battle_royal') {
+          setShowBattleRoyale(true);
+        } 
+        // For other game modes, call onGameStart
+        else if (data.status === 'playing') {
+          onGameStart(data.gameMode || 'gartic_phone');
+        }
       }
     });
 
@@ -108,7 +119,16 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
     setIsStarting(true);
     setError('');
     try {
-      if (gameMode === 'team_vs_team') {
+      if (gameMode === 'battle_royal') {
+        // Update lobby status to playing with battle royale mode
+        // This will trigger the useEffect above for ALL players
+        await update(ref(database, `lobbies/${lobbyId}`), {
+          status: 'playing',
+          gameMode: 'battle_royal',
+          gameStartedAt: Date.now()
+        });
+        // Don't set showBattleRoyale here - let the Firebase listener do it for all players
+      } else if (gameMode === 'team_vs_team') {
         await startTeamGame(lobbyId, teamAssignments, settings);
       } else {
         await startGame(lobbyId, players, settings);
@@ -185,7 +205,21 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
       ? `Waiting (${waitingOn.length})...`
       : 'Start';
 
-  // ── Render ─────────────────────────────────────────────────
+  // Show battle royale screen if selected
+  if (showBattleRoyale) {
+    return (
+      <BattleRoyaleScreen
+        lobbyId={lobbyId}
+        playerId={playerId}
+        onGameEnd={() => {
+          setShowBattleRoyale(false);
+          setIsStarting(false);
+        }}
+      />
+    );
+  }
+
+  // ── Render Lobby ─────────────────────────────────────────────────
 
   return (
     <div className="lobby-page">
