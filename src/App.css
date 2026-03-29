@@ -916,3 +916,302 @@ body {
 
   .btn-row { flex-direction: column; }
 }
+
+/* ── Team vs Team — Lobby team picker ── */
+
+.team-picker { margin-top: 4px; }
+
+.team-btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btn-team {
+  flex: 1;
+  padding: 10px 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.btn-team-a {
+  background: rgba(59,130,246,0.12);
+  color: #60a5fa;
+  border-color: #1e3a5f;
+}
+.btn-team-a:hover, .btn-team-a.team-selected {
+  background: #1d4ed8;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+.btn-team-b {
+  background: rgba(239,68,68,0.12);
+  color: #f87171;
+  border-color: #5f1e1e;
+}
+.btn-team-b:hover, .btn-team-b.team-selected {
+  background: #dc2626;
+  color: #fff;
+  border-color: #ef4444;
+}
+
+.team-badge-small {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+.team-badge-A { background: #1d4ed8; color: #fff; }
+.team-badge-B { background: #dc2626; color: #fff; }
+
+/* ── Team vs Team — Game screen ── */
+
+.tvt-game {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #0f1117;
+}
+
+.tvt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 2px solid;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.tvt-header.team-a { border-color: #2563eb; background: rgba(37,99,235,0.08); }
+.tvt-header.team-b { border-color: #dc2626; background: rgba(220,38,38,0.08); }
+
+.tvt-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.tvt-team-badge {
+  font-size: 0.85rem;
+  font-weight: 800;
+  padding: 4px 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tvt-team-badge.team-a { background: #1d4ed8; color: #fff; }
+.tvt-team-badge.team-b { background: #dc2626; color: #fff; }
+
+.tvt-task {
+  font-size: 1rem;
+  color: #e2e8f0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tvt-members {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.tvt-member-chip {
+  font-size: 0.78rem;
+  background: #1c1f2e;
+  border: 1px solid #2d3148;
+  border-radius: 20px;
+  padding: 3px 10px;
+  color: #94a3b8;
+}
+
+.tvt-editor-wrap {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tvt-editor-wrap .cm-editor {
+  height: 100%;
+  font-size: 0.9rem;
+}
+
+.tvt-editor-wrap .cm-scroller {
+  overflow: auto;
+}
+
+.tvt-footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: #13151f;
+  border-top: 1px solid #2d3148;
+  flex-shrink: 0;
+}
+
+.lang-select {
+  background: #1c1f2e;
+  border: 1px solid #2d3148;
+  color: #e2e8f0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btn-tvt-submit {
+  margin-left: auto;
+  padding: 9px 28px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  background: #22c55e;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.btn-tvt-submit:hover:not(:disabled) { background: #16a34a; }
+.btn-tvt-submitted {
+  background: #1c1f2e !important;
+  color: #64748b !important;
+  cursor: default !important;
+}
+
+.tvt-winner-label {
+  margin-left: auto;
+  font-size: 1rem;
+  font-weight: 800;
+  padding: 8px 18px;
+  border-radius: 8px;
+}
+.tvt-you-won  { background: rgba(34,197,94,0.15); color: #22c55e; }
+.tvt-you-lost { background: rgba(239,68,68,0.12); color: #f87171; }
+
+/* ── Team vs Team — Result screen ── */
+
+.tvt-result {
+  min-height: 100vh;
+  background: #0f1117;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.tvt-winner-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 28px;
+  border-radius: 12px;
+  border: 2px solid;
+}
+.tvt-winner-banner.team-a { background: rgba(37,99,235,0.12); border-color: #2563eb; }
+.tvt-winner-banner.team-b { background: rgba(220,38,38,0.12); border-color: #dc2626; }
+
+.tvt-winner-crown { font-size: 2rem; }
+.tvt-winner-text  { font-size: 1.8rem; font-weight: 800; color: #fff; }
+.tvt-you-won-sub  { margin-left: auto; font-size: 0.95rem; color: #22c55e; font-weight: 700; }
+
+.tvt-result-task {
+  background: #1c1f2e;
+  border: 1px solid #2d3148;
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+.tvt-task-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: block;
+  margin-bottom: 6px;
+}
+.tvt-task-text {
+  font-size: 1rem;
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.teams-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.team-col {
+  background: #1c1f2e;
+  border: 1px solid #2d3148;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.team-col-winner { border-color: #22c55e; }
+
+.team-col-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+}
+.team-col-header.team-a { background: rgba(37,99,235,0.15); }
+.team-col-header.team-b { background: rgba(220,38,38,0.15); }
+
+.team-col-name { font-weight: 800; font-size: 1rem; color: #fff; }
+.winner-crown-sm { margin-left: auto; font-size: 1.1rem; }
+
+.team-members-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #2d3148;
+}
+.team-player-row {
+  font-size: 0.8rem;
+  background: #13151f;
+  border: 1px solid #2d3148;
+  border-radius: 20px;
+  padding: 3px 10px;
+  color: #94a3b8;
+}
+
+.tvt-code-preview { flex: 1; overflow: hidden; }
+.tvt-code-preview .cm-editor { font-size: 0.82rem; }
+
+.team-lang-tag {
+  padding: 6px 14px;
+  font-size: 0.75rem;
+  color: #64748b;
+  border-top: 1px solid #2d3148;
+  background: #13151f;
+}
+
+/* ── Team vs Team — color helpers ── */
+.team-a { --team-color: #2563eb; }
+.team-b { --team-color: #dc2626; }
+
+@media (max-width: 700px) {
+  .teams-grid { grid-template-columns: 1fr; }
+  .tvt-header { flex-wrap: wrap; }
+  .tvt-task { white-space: normal; }
+}

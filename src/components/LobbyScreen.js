@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { subscribeToPlayers, kickPlayer, leaveLobby } from '../services/lobbyService';
-import { updateSettings, startGame, markPlayerReturned, updateGameMode, DEFAULT_TASKS } from '../services/gameService';
+import { updateSettings, startGame, markPlayerReturned, updateGameMode, DEFAULT_TASKS, setTeamAssignment, startTeamGame } from '../services/gameService';
 import { ref, onValue, remove } from 'firebase/database';
 import { database } from '../firebase';
 
 const GAME_MODES = [
   { id: 'gartic_phone',  name: 'Gartic Phone',       icon: '🎨', desc: 'Code the prompt, guess the code' },
-  { id: 'team_vs_team',  name: 'Team vs Team',        icon: '⚔️',  desc: 'Coming soon' },
+  { id: 'team_vs_team',  name: 'Team vs Team',        icon: '⚔️',  desc: 'Race to submit — first team wins' },
   { id: 'battle_royal',  name: 'Battle Royal Coding', icon: '🏆', desc: 'Coming soon' },
 ];
 
@@ -22,6 +22,7 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   const [copied, setCopied]       = useState(false);
   const [returnedIds, setReturnedIds] = useState(new Set());
   const [graceExpired, setGraceExpired] = useState(false);
+  const [teamAssignments, setTeamAssignments] = useState({});
 
   const [codingTimeRaw, setCodingTimeRaw]     = useState('60');
   const [guessingTimeRaw, setGuessingTimeRaw] = useState('30');
@@ -56,12 +57,16 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
         const data = snap.val();
         setIsHost(data.hostId === playerId);
         setGameMode(data.gameMode || 'gartic_phone');
-        if (data.status === 'playing') onGameStart();
+        if (data.status === 'playing') onGameStart(data.gameMode || 'gartic_phone');
       }
     });
 
     const unsubReturned = onValue(ref(database, `lobbies/${lobbyId}/returnedPlayers`), (snap) => {
       setReturnedIds(snap.exists() ? new Set(Object.keys(snap.val())) : new Set());
+    });
+
+    const unsubTeams = onValue(ref(database, `lobbies/${lobbyId}/teamAssignments`), (snap) => {
+      setTeamAssignments(snap.exists() ? snap.val() : {});
     });
 
     const unsubResetAt = onValue(ref(database, `lobbies/${lobbyId}/resetAt`), (snap) => {
@@ -73,7 +78,7 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
     });
 
     return () => {
-      unsubPlayers(); unsubSettings(); unsubLobby(); unsubReturned(); unsubResetAt();
+      unsubPlayers(); unsubSettings(); unsubLobby(); unsubReturned(); unsubResetAt(); unsubTeams();
       clearTimeout(graceTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,10 +104,24 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
   const handleStart = async () => {
     if (players.length < 2)  { setError('Need at least 2 players to start'); return; }
     if (notAllReturned)      { setError(`Waiting for ${waitingOn.length} player(s) to return`); return; }
+
+    if (gameMode === 'team_vs_team') {
+      const teamA = players.filter((p) => teamAssignments[p.id] === 'A');
+      const teamB = players.filter((p) => teamAssignments[p.id] === 'B');
+      if (teamA.length < 1 || teamB.length < 1) {
+        setError('Each team needs at least 1 player');
+        return;
+      }
+    }
+
     setIsStarting(true);
     setError('');
     try {
-      await startGame(lobbyId, players, settings);
+      if (gameMode === 'team_vs_team') {
+        await startTeamGame(lobbyId, teamAssignments, settings);
+      } else {
+        await startGame(lobbyId, players, settings);
+      }
     } catch (err) {
       setError(err.message || 'Failed to start game');
       setIsStarting(false);
@@ -194,7 +213,7 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
         <div className="lobby-panel lobby-panel-grow">
           <div className="panel-label">Settings</div>
 
-          {gameMode === 'gartic_phone' ? (
+          {gameMode === 'gartic_phone' || gameMode === 'team_vs_team' ? (
             <div className="settings-content">
               <div className="setting-row">
                 <label>Coding time (s)</label>
@@ -283,7 +302,12 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
                     {p.nickname}
                     {p.id === playerId && <span className="you-tag"> (you)</span>}
                   </span>
-                  {!returnedIds.has(p.id) && p.id !== playerId && (
+                  {gameMode === 'team_vs_team' && teamAssignments[p.id] && (
+                    <span className={`team-badge-small team-badge-${teamAssignments[p.id]}`}>
+                      Team {teamAssignments[p.id]}
+                    </span>
+                  )}
+                  {!returnedIds.has(p.id) && p.id !== playerId && gameMode !== 'team_vs_team' && (
                     <span className="not-returned">returning...</span>
                   )}
                 </div>
@@ -293,8 +317,32 @@ function LobbyScreen({ lobbyId, playerId, nickname, onGameStart, onLeave }) {
               </li>
             ))}
           </ul>
-          {!isHost && (
+
+          {gameMode === 'team_vs_team' && (
+            <div className="team-picker">
+              <div className="panel-label" style={{ marginTop: '12px' }}>Pick Your Team</div>
+              <div className="team-btn-row">
+                <button
+                  className={`btn-team btn-team-a ${teamAssignments[playerId] === 'A' ? 'team-selected' : ''}`}
+                  onClick={() => setTeamAssignment(lobbyId, playerId, 'A')}
+                >
+                  Team A
+                </button>
+                <button
+                  className={`btn-team btn-team-b ${teamAssignments[playerId] === 'B' ? 'team-selected' : ''}`}
+                  onClick={() => setTeamAssignment(lobbyId, playerId, 'B')}
+                >
+                  Team B
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!isHost && gameMode !== 'team_vs_team' && (
             <p className="waiting-msg">Waiting for the host to start...</p>
+          )}
+          {!isHost && gameMode === 'team_vs_team' && (
+            <p className="waiting-msg">Pick a team, then wait for the host to start.</p>
           )}
         </div>
 

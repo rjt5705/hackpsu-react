@@ -1,5 +1,5 @@
 import { database } from '../firebase';
-import { ref, set, get, update, onValue, remove } from 'firebase/database';
+import { ref, set, get, update, onValue, remove, runTransaction } from 'firebase/database';
 
 export const DEFAULT_TASKS = [
   'Write a function that checks if a number is even',
@@ -141,7 +141,54 @@ export const resetLobby = async (lobbyId) => {
   if (!lobbyId) return;
   await remove(ref(database, `lobbies/${lobbyId}/game`));
   await remove(ref(database, `lobbies/${lobbyId}/returnedPlayers`));
+  await remove(ref(database, `lobbies/${lobbyId}/teamAssignments`));
   await update(ref(database, `lobbies/${lobbyId}`), { status: 'waiting', resetAt: Date.now() });
+};
+
+// ── Team vs Team ──────────────────────────────────────────────────────────────
+
+export const setTeamAssignment = async (lobbyId, playerId, team) => {
+  if (!lobbyId || !playerId) return;
+  await set(ref(database, `lobbies/${lobbyId}/teamAssignments/${playerId}`), team);
+};
+
+export const startTeamGame = async (lobbyId, teamAssignments, settings) => {
+  const task = shuffle(toArray(settings.taskBank))[0];
+  const members = { A: {}, B: {} };
+  Object.entries(teamAssignments).forEach(([pid, team]) => {
+    if (team === 'A' || team === 'B') members[team][pid] = true;
+  });
+
+  const gameData = {
+    task,
+    startedAt: Date.now(),
+    winner: null,
+    teams: {
+      A: { code: '', language: 'JavaScript', submitted: false, submittedAt: null, members: members.A },
+      B: { code: '', language: 'JavaScript', submitted: false, submittedAt: null, members: members.B },
+    },
+  };
+
+  await set(ref(database, `lobbies/${lobbyId}/game`), gameData);
+  await set(ref(database, `lobbies/${lobbyId}/status`), 'playing');
+};
+
+export const updateTeamCode = async (lobbyId, team, code) => {
+  await set(ref(database, `lobbies/${lobbyId}/game/teams/${team}/code`), code);
+};
+
+export const setTeamLanguage = async (lobbyId, team, language) => {
+  await set(ref(database, `lobbies/${lobbyId}/game/teams/${team}/language`), language);
+};
+
+export const submitTeam = async (lobbyId, team) => {
+  await update(ref(database, `lobbies/${lobbyId}/game/teams/${team}`), {
+    submitted: true,
+    submittedAt: Date.now(),
+  });
+  const winnerRef = ref(database, `lobbies/${lobbyId}/game/winner`);
+  await runTransaction(winnerRef, (current) => (current === null ? team : current));
+  await update(ref(database, `lobbies/${lobbyId}`), { status: 'finished' });
 };
 
 // Mark a player as having returned to the lobby

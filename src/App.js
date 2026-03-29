@@ -4,12 +4,15 @@ import HomeScreen from './components/HomeScreen';
 import LobbyScreen from './components/LobbyScreen';
 import GameScreen from './components/GameScreen';
 import RevealScreen from './components/RevealScreen';
+import TeamVsTeamGame from './components/TeamVsTeamGame';
+import TeamVsTeamResult from './components/TeamVsTeamResult';
 
 function App() {
   const [screen, setScreen] = useState('home'); // 'home' | 'lobby' | 'game' | 'reveal'
   const [lobbyId, setLobbyId] = useState(null);
   const [playerId, setPlayerId] = useState(null);
   const [nickname, setNickname] = useState('');
+  const [activeMode, setActiveMode] = useState('gartic_phone');
 
   const handleEnterLobby = (lid, pid, nick) => {
     setLobbyId(lid);
@@ -18,7 +21,7 @@ function App() {
     setScreen('lobby');
   };
 
-  const handleGameStart = () => setScreen('game');
+  const handleGameStart = (mode = 'gartic_phone') => { setActiveMode(mode); setScreen('game'); };
 
   const handleGameEnd = () => setScreen('reveal');
 
@@ -48,6 +51,15 @@ function App() {
   }
 
   if (screen === 'game') {
+    if (activeMode === 'team_vs_team') {
+      return (
+        <TeamVsTeamGame
+          lobbyId={lobbyId}
+          playerId={playerId}
+          onGameEnd={handleGameEnd}
+        />
+      );
+    }
     return (
       <GameScreen
         lobbyId={lobbyId}
@@ -58,6 +70,16 @@ function App() {
   }
 
   if (screen === 'reveal') {
+    if (activeMode === 'team_vs_team') {
+      return (
+        <TeamVsTeamResult
+          lobbyId={lobbyId}
+          playerId={playerId}
+          onBackToLobby={handleBackToLobby}
+          onGoHome={handleLeave}
+        />
+      );
+    }
     return (
       <RevealScreen
         lobbyId={lobbyId}
